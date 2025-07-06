@@ -9,12 +9,21 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@dicebear/collection": "^7.0.1",
-    "@dicebear/core": "^7.0.1",
-    "@supabase/supabase-js": "^2.33.2",
-    "dotenv": "^16.3.1",
-    "next": "13.4.19",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "@dicebear/collection": "^9.2.3",
+    "@dicebear/core": "^9.2.3",
+    "@headlessui/react": "^2.2.4",
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.50.3",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@tanstack/react-query": "^5.81.5",
+    "dotenv": "^17.0.1",
+    "next": "15.3.5",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.11"
   }
 }
