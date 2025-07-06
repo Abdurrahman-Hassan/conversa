@@ -1,6 +1,5 @@
-.avatarimg{
-    width: 200px;
-    height: 200px;
-    border-radius: 15px;
-    margin-top: 20px;
+@import "tailwindcss";
+
+body {
+  font-family: 'Staatliches', sans-serif;
 }
