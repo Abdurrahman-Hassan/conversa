@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import supabase from "../../utils/supabase";
 import Loading from "./loading";
@@ -41,7 +41,6 @@ const deleteChatRequest = async (id) => {
 };
 
 const approveUserRequest = async ({ roomId, userId, pendingUsers }) => {
-    // Remove from room pending_users
     const updatedPendingUsers = pendingUsers.filter((uid) => uid !== userId);
     const { error: pendingUpdateError } = await supabase
         .from("chat_rooms")
@@ -50,7 +49,6 @@ const approveUserRequest = async ({ roomId, userId, pendingUsers }) => {
 
     if (pendingUpdateError) throw pendingUpdateError;
 
-    // Fetch user row
     const { data: userRow, error: userError } = await supabase
         .from("users")
         .select("approved_chat_rooms")
@@ -61,7 +59,6 @@ const approveUserRequest = async ({ roomId, userId, pendingUsers }) => {
 
     const updatedApproved = [...(userRow.approved_chat_rooms || []), roomId];
 
-    // Update user row
     const { error: updateUserError } = await supabase
         .from("users")
         .update({ approved_chat_rooms: updatedApproved })
@@ -94,7 +91,6 @@ const ChatWindow = ({ roomId, currentUser }) => {
         data: chats = [],
         isLoading: chatsLoading,
         refetch: refetchChats,
-        setData: setChatsData, // for realtime updates
     } = useQuery({
         queryKey: ["chats", roomId],
         queryFn: () => fetchChats(roomId),
@@ -114,8 +110,6 @@ const ChatWindow = ({ roomId, currentUser }) => {
     useEffect(() => {
         if (!roomId) return;
 
-        // Reset local state when room changes
-        setChatsState([]);
         refetchRoomDetails();
         refetchChats();
 
@@ -136,7 +130,6 @@ const ChatWindow = ({ roomId, currentUser }) => {
                             setChatsState((prev) =>
                                 prev.some((c) => c.id === fullChat.id) ? prev : [...prev, fullChat]
                             );
-                            // Optionally update query cache
                             queryClient.setQueryData(["chats", roomId], (old = []) =>
                                 old.some((c) => c.id === fullChat.id) ? old : [...old, fullChat]
                             );
@@ -173,16 +166,12 @@ const ChatWindow = ({ roomId, currentUser }) => {
     // Mutations
     const updateChatMutation = useMutation({
         mutationFn: updateChatRequest,
-        onSuccess: () => {
-            // No manual cache update needed; realtime will update
-        },
+        onSuccess: () => {},
     });
 
     const deleteChatMutation = useMutation({
         mutationFn: deleteChatRequest,
-        onSuccess: () => {
-            // No manual cache update needed; realtime will update
-        },
+        onSuccess: () => {},
     });
 
     const approveUserMutation = useMutation({
@@ -199,7 +188,6 @@ const ChatWindow = ({ roomId, currentUser }) => {
 
     // Derived data
     const roomOwner = roomDetails?.owner;
-    const pendingUsers = roomDetails?.pending_users || [];
     const loading = chatsLoading || roomLoading;
 
     const handleUpdateChat = (id, newText) => {
@@ -214,14 +202,22 @@ const ChatWindow = ({ roomId, currentUser }) => {
         approveUserMutation.mutate({ userId });
     };
 
+    // For auto scroll to bottom
+    const messagesEndRef = useRef(null);
+
+    useEffect(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+        }
+    }, [chatsState]);
+
     return (
-        <div className="flex-1 bg-white border-4 border-black shadow-[6px_6px_0px_rgba(0,0,0,1)] p-4 flex flex-col">
-            {/* Menu Bar */}
+        <div className="flex-1 bg-white border-4 border-black shadow-[6px_6px_0px_rgba(0,0,0,1)] p-4 flex flex-col max-h-[95vh]">
+            {/* Header */}
             <div className="flex justify-between items-center mb-4">
                 <h2 className="text-2xl font-bold uppercase border-b-2 border-black pb-2">
                     {roomId ? `Room #${roomId}` : "Select a Room"}
                 </h2>
-
                 {currentUser === roomOwner && (
                     <button
                         onClick={() => setShowApprovalPanel(!showApprovalPanel)}
@@ -243,32 +239,43 @@ const ChatWindow = ({ roomId, currentUser }) => {
                 />
             )}
 
-            {/* Chat List */}
-            {!roomId ? (
+            {/* Main chat area */}
+            {roomId ? (
+                <div className="flex flex-col flex-1 min-h-0">
+                    {/* Scrollable Messages */}
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+                        {loading ? (
+                            <div className="flex justify-center items-center h-full">
+                                <Loading />
+                            </div>
+                        ) : chatsState.length ? (
+                            <>
+                                {chatsState.map((chat) => (
+                                    <ChatMessage
+                                        key={chat.id}
+                                        chat={chat}
+                                        isOwner={currentUser === chat.user_id}
+                                        onEdit={handleUpdateChat}
+                                        onDelete={handleDeleteChat}
+                                    />
+                                ))}
+                                <div ref={messagesEndRef} />
+                            </>
+                        ) : (
+                            <p className="text-sm text-black font-bold">No chats yet...</p>
+                        )}
+                    </div>
+
+                    {/* Input stays fixed below messages */}
+                    <div className="pt-4 border-t border-black bg-white">
+                        <ChatInput roomId={roomId} />
+                    </div>
+                </div>
+            ) : (
                 <div className="flex-1 flex items-center justify-center text-center">
                     <p className="text-black font-bold text-lg">Select a room to start chatting.</p>
                 </div>
-            ) : loading ? (
-                <Loading />
-            ) : (
-                <div className="flex-1 mt-2 overflow-y-auto space-y-4">
-                    {chatsState.length ? (
-                        chatsState.map((chat) => (
-                            <ChatMessage
-                                key={chat.id}
-                                chat={chat}
-                                isOwner={currentUser === chat.user_id}
-                                onEdit={handleUpdateChat}
-                                onDelete={handleDeleteChat}
-                            />
-                        ))
-                    ) : (
-                        <p className="text-sm text-black font-bold">No chats yet...</p>
-                    )}
-                </div>
             )}
-
-            {roomId && <ChatInput roomId={roomId} />}
         </div>
     );
 };
