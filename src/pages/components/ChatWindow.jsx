@@ -101,19 +101,18 @@ const ChatWindow = ({ roomId, currentUser }) => {
     // For realtime updates: manage chats state locally
     const [chatsState, setChatsState] = useState([]);
 
-    // Keep chatsState in sync with react-query data
     useEffect(() => {
-        setChatsState(chats || []);
+        const chatsStr = JSON.stringify(chatsState);
+        const newChatsStr = JSON.stringify(chats || []);
+        if (chatsStr !== newChatsStr) {
+            setChatsState(chats || []);
+        }
     }, [chats]);
 
     // Real-time logic
     useEffect(() => {
         if (!roomId) return;
 
-        refetchRoomDetails();
-        refetchChats();
-
-        // Setup real-time listener
         const channel = supabase
             .channel(`room-${roomId}`)
             .on(
@@ -160,18 +159,26 @@ const ChatWindow = ({ roomId, currentUser }) => {
         return () => {
             supabase.removeChannel(channel);
         };
-        // eslint-disable-next-line
+    }, [roomId]); // ✅ stable dependency
+
+
+    // Refetch only when roomId changes
+    useEffect(() => {
+        if (!roomId) return;
+        refetchRoomDetails();
+        refetchChats();
     }, [roomId]);
+
 
     // Mutations
     const updateChatMutation = useMutation({
         mutationFn: updateChatRequest,
-        onSuccess: () => {},
+        onSuccess: () => { },
     });
 
     const deleteChatMutation = useMutation({
         mutationFn: deleteChatRequest,
-        onSuccess: () => {},
+        onSuccess: () => { },
     });
 
     const approveUserMutation = useMutation({

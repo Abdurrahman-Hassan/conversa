@@ -1,43 +1,68 @@
 import { useRef, useEffect, useMemo } from "react";
 import useWebRTC from "@/hooks/useWebRTC";
-import useCallSignaling from "@/hooks/useCallSignaling";
+import createCallSignaling from "@/utils/createCallSignaling";
 
 const UserProfilePopup = ({ chat, onClose, currentUserId }) => {
     const remoteUserId = chat?.user_id;
+
     const roomId = useMemo(() => {
         if (!currentUserId || !remoteUserId) return null;
         return `call-${[currentUserId, remoteUserId].sort().join("-")}`;
     }, [currentUserId, remoteUserId]);
-    const remoteAudioRef = useRef(null);
 
-    // 1. Create webrtc hook without signaling first
+    const remoteAudioRef = useRef(null);
+    const signalingRef = useRef(null);
+
+    // WebRTC setup
     const webrtc = useWebRTC({
         localUserId: currentUserId,
         remoteUserId,
-        signaling: null, // will be set later
+        remoteAudioRef,
     });
 
-    // 2. Create signaling hook with handlers from webrtc
-    const signaling = useCallSignaling({
-        roomId,
-        userId: currentUserId,
-        onOffer: webrtc.handleOffer,
-        onAnswer: webrtc.handleAnswer,
-        onCandidate: webrtc.handleCandidate,
-    });
-
-    // 3. After signaling is created, set it in webrtc
+    // Setup signaling
     useEffect(() => {
+        if (!roomId || !currentUserId) return;
+
+        const signaling = createCallSignaling({
+            roomId,
+            userId: currentUserId,
+
+            onSignal: (signal) => {
+                console.log("📡 Incoming signal (UserProfilePopup):", signal);
+
+                // 🚫 Ignore offer — we're the initiator here
+                if (signal?.type === "offer") return;
+
+                // ✅ Accept answer/candidates
+                webrtc.peer?.signal?.(signal);
+            },
+        });
+
+        signalingRef.current = signaling;
         webrtc.setSignaling(signaling);
-    }, [signaling]);
 
-    // 4. Set the remote audio ref for playback
+        return () => {
+            signaling.destroy?.();
+        };
+    }, [roomId, currentUserId]);
+
+    // Peer + audio cleanup
     useEffect(() => {
-        webrtc.remoteAudio.current = remoteAudioRef.current;
-    }, [remoteAudioRef.current]);
+        return () => {
+            webrtc.cleanup?.();
+        };
+    }, []);
 
-    const handleCall = () => {
-        webrtc.startCall();
+    // 🔔 Start call
+    const handleCall = async () => {
+        await webrtc.startCall({
+            meta: {
+                user_id: remoteUserId,
+                user_name: chat?.users?.user_name,
+                chat_preview: chat?.chat,
+            },
+        });
     };
 
     if (!chat) return null;
@@ -51,6 +76,7 @@ const UserProfilePopup = ({ chat, onClose, currentUserId }) => {
                 >
                     ×
                 </button>
+
                 <div className="flex items-center space-x-4">
                     <img
                         src={chat.users?.user_avatar}
@@ -64,14 +90,16 @@ const UserProfilePopup = ({ chat, onClose, currentUserId }) => {
                         </div>
                     </div>
                 </div>
+
                 <p className="text-sm text-black font-semibold">"{chat.chat}"</p>
+
                 <button
                     onClick={handleCall}
                     className="w-full py-2 mt-2 bg-green-600 text-white font-bold border-2 border-black hover:bg-green-800"
                 >
                     📞 Call User
                 </button>
-                {/* 🔊 Remote Audio */}
+
                 <audio ref={remoteAudioRef} autoPlay className="hidden" />
             </div>
         </div>

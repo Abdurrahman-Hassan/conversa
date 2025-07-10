@@ -1,95 +1,122 @@
 import { useEffect, useRef, useState } from "react";
+import Peer from "simple-peer";
 
 const useWebRTC = ({ localUserId, remoteUserId, remoteAudioRef }) => {
-  const pc = useRef(null);
-  const localStream = useRef(null);
-  const remoteAudio = remoteAudioRef || useRef(null);
-  const [isConnected, setIsConnected] = useState(false);
+  const peerRef = useRef(null);
+  const localStreamRef = useRef(null);
   const signalingRef = useRef(null);
+  const [isConnected, setIsConnected] = useState(false);
 
   const setSignaling = (sig) => {
     signalingRef.current = sig;
   };
 
-  useEffect(() => {
-    pc.current = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+  const setupPeerEvents = (peer) => {
+    peer.on("signal", (data) => {
+      console.log("📤 Peer emitting signal:", data);
+      signalingRef.current?.sendSignal({
+        signal: data,
+        to: remoteUserId,
+        from: localUserId,
+      });
     });
 
-    pc.current.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      if (remoteAudio.current) {
-        remoteAudio.current.srcObject = remoteStream;
+    peer.on("stream", (remoteStream) => {
+      if (remoteAudioRef?.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
       }
-    };
+    });
 
-    pc.current.onicecandidate = (event) => {
-      if (event.candidate && signalingRef.current) {
-        signalingRef.current.sendCandidate(event.candidate);
-      }
-    };
+    peer.on("connect", () => {
+      setIsConnected(true);
+      console.log("✅ WebRTC connection established");
+    });
 
-    return () => {
-      pc.current?.close();
-    };
-    // Only run once
-    // eslint-disable-next-line
-  }, []);
+    peer.on("error", (err) => {
+      console.error("❌ Peer error:", err);
+    });
+
+    peer.on("close", () => {
+      console.log("❌ WebRTC connection closed");
+      setIsConnected(false);
+      peerRef.current = null;
+    });
+  };
+
+  const createPeer = async ({ initiator, signal = null }) => {
+    if (peerRef.current) return peerRef.current;
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    localStreamRef.current = stream;
+
+    const peer = new Peer({
+      initiator,
+      trickle: true,
+      stream,
+    });
+
+    peerRef.current = peer;
+
+    setupPeerEvents(peer);
+
+    if (signal) {
+      peer.signal(signal);
+    }
+
+    return peer;
+  };
 
   const startCall = async () => {
-    localStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localStream.current.getTracks().forEach((track) => {
-      pc.current.addTrack(track, localStream.current);
-    });
-
-    const offer = await pc.current.createOffer();
-    await pc.current.setLocalDescription(offer);
-
-    if (signalingRef.current) {
-      signalingRef.current.sendOffer(offer);
-    } else {
-      console.error("Signaling not set, cannot send offer");
+    if (!remoteUserId) {
+      console.error("❌ No remote user to call.");
+      return;
     }
+
+    await createPeer({ initiator: true });
   };
 
-  const handleOffer = async (offer) => {
-    localStream.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localStream.current.getTracks().forEach((track) => {
-      pc.current.addTrack(track, localStream.current);
-    });
+  const acceptCall = async (signal) => {
+    await createPeer({ initiator: false, signal }); // <- Unified handling
+  };
 
-    await pc.current.setRemoteDescription(new RTCSessionDescription(offer));
-    const answer = await pc.current.createAnswer();
-    await pc.current.setLocalDescription(answer);
-
-    if (signalingRef.current) {
-      signalingRef.current.sendAnswer(answer);
-    } else {
-      console.error("Signaling not set, cannot send answer");
+  const handleSignal = (signal) => {
+    console.log("📥 Handling incoming signal:", signal);
+    if (!peerRef.current) {
+      console.warn("⚠️ Peer not ready. Ignoring signal.");
+      return;
     }
-  };
 
-  const handleAnswer = async (answer) => {
-    await pc.current.setRemoteDescription(new RTCSessionDescription(answer));
-    setIsConnected(true);
-  };
-
-  const handleCandidate = async (candidate) => {
     try {
-      await pc.current.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (e) {
-      console.error("Error adding received ice candidate", e);
+      peerRef.current.signal(signal);
+    } catch (err) {
+      console.error("❌ Failed to apply signal:", err);
     }
   };
+
+  const cleanup = () => {
+    if (peerRef.current) peerRef.current.destroy();
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+    }
+    peerRef.current = null;
+    localStreamRef.current = null;
+    setIsConnected(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, []);
 
   return {
     startCall,
-    handleOffer,
-    handleAnswer,
-    handleCandidate,
-    remoteAudio,
+    acceptCall,
+    handleSignal,
     setSignaling,
     isConnected,
+    remoteAudio: remoteAudioRef,
+    cleanup,
   };
 };
 

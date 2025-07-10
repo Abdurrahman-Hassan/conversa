@@ -1,10 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import UserProfilePopup from "./UserProfilePopup";
+import supabase from "@/utils/supabase";
 
 const ChatMessage = ({ chat, isOwner, onEdit, onDelete }) => {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(chat.chat);
   const [showPopup, setShowPopup] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState(null);
+
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setCurrentUserId(user.id);
+    };
+    getCurrentUser();
+  }, []);
 
   const handleCardClick = (e) => {
     // Ignore if the message is from the current user or user is editing
@@ -65,7 +75,13 @@ const ChatMessage = ({ chat, isOwner, onEdit, onDelete }) => {
         )}
       </div>
 
-      {showPopup && <UserProfilePopup chat={chat} onClose={() => setShowPopup(false)} />}
+      {showPopup && (
+        <UserProfilePopup
+          chat={chat}
+          currentUserId={currentUserId}
+          onClose={() => setShowPopup(false)}
+        />
+      )}
     </>
   );
 };
